@@ -13,7 +13,10 @@ export const people = sqliteTable("people", {
   name: text("name").notNull(),
   role: text("role").notNull(),
   phone: text("phone").notNull(),
-  license: text("license"),
+  licenseClass: text("license_class"),
+  drivingLicense: text("driving_license"),
+  licenseExpiry: text("license_expiry"),
+  address: text("address"),
   status: text("status").notNull().default("Available"),
 });
 
