@@ -5,7 +5,8 @@ async function ready() {
   await db.batch([
     db.prepare("CREATE TABLE IF NOT EXISTS vehicles (id INTEGER PRIMARY KEY AUTOINCREMENT, plate TEXT NOT NULL UNIQUE, type TEXT NOT NULL, capacity INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'Available')"),
     db.prepare("CREATE TABLE IF NOT EXISTS people (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, role TEXT NOT NULL, phone TEXT NOT NULL, license_class TEXT, driving_license TEXT, license_expiry TEXT, address TEXT, status TEXT NOT NULL DEFAULT 'Available')"),
-    db.prepare("CREATE TABLE IF NOT EXISTS routes (id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT NOT NULL UNIQUE, origin TEXT NOT NULL, destination TEXT NOT NULL, distance INTEGER NOT NULL)"),
+    db.prepare("CREATE TABLE IF NOT EXISTS routes (id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT NOT NULL UNIQUE, origin TEXT NOT NULL, destination TEXT NOT NULL, distance INTEGER NOT NULL, estimated_departure TEXT, estimated_arrival TEXT)"),
+    db.prepare("CREATE TABLE IF NOT EXISTS route_goods (id INTEGER PRIMARY KEY AUTOINCREMENT, route_id INTEGER NOT NULL, goods TEXT NOT NULL, customer TEXT NOT NULL)"),
     db.prepare("CREATE TABLE IF NOT EXISTS schedules (id INTEGER PRIMARY KEY AUTOINCREMENT, route_id INTEGER NOT NULL, vehicle_id INTEGER NOT NULL, driver_id INTEGER NOT NULL, assistant_id INTEGER, date TEXT NOT NULL, time TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'Scheduled')"),
   ]);
   const peopleColumns = await db.prepare("PRAGMA table_info(people)").all<{name:string}>();
@@ -19,12 +20,17 @@ async function ready() {
   for (const [column, statement] of missingColumns) {
     if (!existingColumns.has(column)) await db.prepare(statement).run();
   }
+  const routeColumns = await db.prepare("PRAGMA table_info(routes)").all<{name:string}>();
+  const existingRouteColumns = new Set(routeColumns.results.map((column) => column.name));
+  if (!existingRouteColumns.has("estimated_departure")) await db.prepare("ALTER TABLE routes ADD COLUMN estimated_departure TEXT").run();
+  if (!existingRouteColumns.has("estimated_arrival")) await db.prepare("ALTER TABLE routes ADD COLUMN estimated_arrival TEXT").run();
   const count = await db.prepare("SELECT COUNT(*) total FROM vehicles").first<{total:number}>();
   if (!count?.total) {
     await db.batch([
       db.prepare("INSERT INTO vehicles (plate,type,capacity,status) VALUES ('SGK 4821','Coach',44,'On route'),('GBH 2934','Mini bus',18,'Available'),('SLA 7612','Coach',52,'Maintenance'),('GBC 1408','Van',12,'Available')"),
       db.prepare("INSERT INTO people (name,role,phone,license_class,driving_license,license_expiry,address,status) VALUES ('Marcus Tan','Driver','9123 8841','Class 4','D-20481','2028-09-18','12 Jurong West Street 41','On duty'),('Aisha Rahman','Driver','8891 2044','Class 3','D-19832','2027-06-30','85 Tampines Avenue 4','Available'),('Daniel Lim','Driver','9782 1109','Class 4A','D-22104','2029-01-12','21 Woodlands Drive 16','Available'),('Mei Chen','Assistant','9012 6743',NULL,NULL,NULL,'44 Bedok North Road','On duty'),('Ravi Kumar','Assistant','8122 9104',NULL,NULL,NULL,'7 Yishun Ring Road','Available')"),
-      db.prepare("INSERT INTO routes (code,origin,destination,distance) VALUES ('RT-104','Jurong Hub','Changi Logistics Park',38),('RT-207','Woodlands Depot','Tuas South',34),('RT-312','Punggol Interchange','Seletar Aerospace',17)"),
+      db.prepare("INSERT INTO routes (code,origin,destination,distance,estimated_departure,estimated_arrival) VALUES ('RT-104','Jurong Hub','Changi Logistics Park',38,'2026-07-15T08:30','2026-07-15T10:00'),('RT-207','Woodlands Depot','Tuas South',34,'2026-07-15T11:15','2026-07-15T12:35'),('RT-312','Punggol Interchange','Seletar Aerospace',17,'2026-07-15T15:00','2026-07-15T15:45')"),
+      db.prepare("INSERT INTO route_goods (route_id,goods,customer) VALUES (1,'Chilled food cartons','Fresh Harvest Pte Ltd'),(1,'Packaging materials','Atlas Supply Co'),(2,'Machine components','Westline Engineering'),(3,'Aviation consumables','AeroServe Asia')"),
     ]);
     const today = new Date().toISOString().slice(0,10);
     await db.prepare("INSERT INTO schedules (route_id,vehicle_id,driver_id,assistant_id,date,time,status) VALUES (1,1,1,4,?, '08:30','On route'),(2,2,2,5,?, '11:15','Scheduled'),(3,4,3,NULL,?, '15:00','Scheduled')").bind(today,today,today).run();
@@ -37,7 +43,7 @@ export async function GET() {
   const [vehicles, people, routes, schedules] = await Promise.all([
     db.prepare("SELECT * FROM vehicles ORDER BY id DESC").all(),
     db.prepare("SELECT * FROM people ORDER BY id DESC").all(),
-    db.prepare("SELECT * FROM routes ORDER BY id DESC").all(),
+    db.prepare("SELECT r.*, (SELECT GROUP_CONCAT(rg.customer || ': ' || rg.goods, ' • ') FROM route_goods rg WHERE rg.route_id=r.id) cargo_summary FROM routes r ORDER BY r.id DESC").all(),
     db.prepare("SELECT s.*, r.code route_code, r.origin, r.destination, v.plate, p.name driver_name, a.name assistant_name FROM schedules s JOIN routes r ON r.id=s.route_id JOIN vehicles v ON v.id=s.vehicle_id JOIN people p ON p.id=s.driver_id LEFT JOIN people a ON a.id=s.assistant_id ORDER BY s.date,s.time").all(),
   ]);
   return Response.json({vehicles:vehicles.results, people:people.results, routes:routes.results, schedules:schedules.results});
@@ -45,7 +51,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   const db = await ready();
-  const p = await request.json() as Record<string, string | number | null>;
+  const p = await request.json() as Record<string, string | number | null | Array<{goods:string;customer:string}>>;
   if (p.kind === "vehicle") await db.prepare("INSERT INTO vehicles (plate,type,capacity,status) VALUES (?,?,?,'Available')").bind(p.plate,p.type,p.capacity).run();
   else if (p.kind === "person") {
     if (p.role === "Driver" && (!p.licenseClass || !p.drivingLicense || !p.licenseExpiry || !p.address)) {
@@ -53,7 +59,16 @@ export async function POST(request: Request) {
     }
     await db.prepare("INSERT INTO people (name,role,phone,license_class,driving_license,license_expiry,address,status) VALUES (?,?,?,?,?,?,?,'Available')").bind(p.name,p.role,p.phone,p.licenseClass || null,p.drivingLicense || null,p.licenseExpiry || null,p.address || null).run();
   }
-  else if (p.kind === "route") await db.prepare("INSERT INTO routes (code,origin,destination,distance) VALUES (?,?,?,?)").bind(p.code,p.origin,p.destination,p.distance).run();
+  else if (p.kind === "route") {
+    if (!p.estimatedDeparture || !p.estimatedArrival) return Response.json({error:"Estimated departure and arrival are required"},{status:400});
+    if (String(p.estimatedArrival) <= String(p.estimatedDeparture)) return Response.json({error:"Estimated arrival must be after departure"},{status:400});
+    const goods = Array.isArray(p.goodsItems) ? p.goodsItems : [];
+    const items = goods.filter((item) => item.goods.trim() && item.customer.trim());
+    if (!items.length) return Response.json({error:"At least one goods and customer entry is required"},{status:400});
+    const result = await db.prepare("INSERT INTO routes (code,origin,destination,distance,estimated_departure,estimated_arrival) VALUES (?,?,?,?,?,?)").bind(p.code,p.origin,p.destination,p.distance,p.estimatedDeparture,p.estimatedArrival).run();
+    const routeId = result.meta.last_row_id;
+    await db.batch(items.map((item) => db.prepare("INSERT INTO route_goods (route_id,goods,customer) VALUES (?,?,?)").bind(routeId,item.goods.trim(),item.customer.trim())));
+  }
   else if (p.kind === "schedule") await db.prepare("INSERT INTO schedules (route_id,vehicle_id,driver_id,assistant_id,date,time,status) VALUES (?,?,?,?,?,?,'Scheduled')").bind(p.routeId,p.vehicleId,p.driverId,p.assistantId || null,p.date,p.time).run();
   else return Response.json({error:"Invalid record type"},{status:400});
   return Response.json({ok:true},{status:201});

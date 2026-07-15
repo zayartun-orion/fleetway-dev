@@ -26,6 +26,15 @@ export const routes = sqliteTable("routes", {
   origin: text("origin").notNull(),
   destination: text("destination").notNull(),
   distance: integer("distance").notNull(),
+  estimatedDeparture: text("estimated_departure"),
+  estimatedArrival: text("estimated_arrival"),
+});
+
+export const routeGoods = sqliteTable("route_goods", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  routeId: integer("route_id").notNull(),
+  goods: text("goods").notNull(),
+  customer: text("customer").notNull(),
 });
 
 export const schedules = sqliteTable("schedules", {
