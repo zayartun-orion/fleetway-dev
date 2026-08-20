@@ -48,6 +48,19 @@ export const mileageFuelLogs = sqliteTable("mileage_fuel_logs", {
   notes: text("notes"),
 }, (table) => [index("idx_mileage_fuel_logs_vehicle_date").on(table.vehicleId, table.recordedAt)]);
 
+export const maintenanceLogs = sqliteTable("maintenance_logs", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  vehicleId: integer("vehicle_id").notNull(),
+  serviceType: text("service_type").notNull(),
+  completedDate: text("completed_date").notNull(),
+  completedOdometerKm: integer("completed_odometer_km"),
+  nextDueDate: text("next_due_date"),
+  nextDueOdometerKm: integer("next_due_odometer_km"),
+  workshop: text("workshop"),
+  cost: real("cost").notNull().default(0),
+  notes: text("notes"),
+}, (table) => [index("idx_maintenance_logs_vehicle_due").on(table.vehicleId, table.nextDueDate)]);
+
 export const schedules = sqliteTable("schedules", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   routeId: integer("route_id").notNull(),
