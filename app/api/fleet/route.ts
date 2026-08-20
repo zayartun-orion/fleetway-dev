@@ -7,6 +7,8 @@ async function ready() {
     db.prepare("CREATE TABLE IF NOT EXISTS people (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, role TEXT NOT NULL, phone TEXT NOT NULL, license_class TEXT, driving_license TEXT, license_expiry TEXT, address TEXT, status TEXT NOT NULL DEFAULT 'Available')"),
     db.prepare("CREATE TABLE IF NOT EXISTS routes (id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT NOT NULL UNIQUE, origin TEXT NOT NULL, destination TEXT NOT NULL, distance INTEGER NOT NULL, estimated_departure TEXT, estimated_arrival TEXT)"),
     db.prepare("CREATE TABLE IF NOT EXISTS route_goods (id INTEGER PRIMARY KEY AUTOINCREMENT, route_id INTEGER NOT NULL, goods TEXT NOT NULL, customer TEXT NOT NULL)"),
+    db.prepare("CREATE TABLE IF NOT EXISTS mileage_fuel_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, vehicle_id INTEGER NOT NULL, recorded_at TEXT NOT NULL, odometer_km INTEGER NOT NULL, petrol_litres REAL NOT NULL, petrol_cost REAL NOT NULL, station TEXT, notes TEXT)"),
+    db.prepare("CREATE INDEX IF NOT EXISTS idx_mileage_fuel_logs_vehicle_date ON mileage_fuel_logs(vehicle_id, recorded_at DESC)"),
     db.prepare("CREATE TABLE IF NOT EXISTS schedules (id INTEGER PRIMARY KEY AUTOINCREMENT, route_id INTEGER NOT NULL, vehicle_id INTEGER NOT NULL, driver_id INTEGER NOT NULL, assistant_id INTEGER, date TEXT NOT NULL, time TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'Scheduled')"),
   ]);
   const peopleColumns = await db.prepare("PRAGMA table_info(people)").all<{name:string}>();
@@ -40,13 +42,14 @@ async function ready() {
 
 export async function GET() {
   const db = await ready();
-  const [vehicles, people, routes, schedules] = await Promise.all([
-    db.prepare("SELECT * FROM vehicles ORDER BY id DESC").all(),
+  const [vehicles, people, routes, schedules, mileageFuelLogs] = await Promise.all([
+    db.prepare("SELECT v.*, (SELECT m.odometer_km FROM mileage_fuel_logs m WHERE m.vehicle_id=v.id ORDER BY m.recorded_at DESC, m.id DESC LIMIT 1) latest_odometer_km, (SELECT ROUND(SUM(m.petrol_litres),2) FROM mileage_fuel_logs m WHERE m.vehicle_id=v.id) total_petrol_litres FROM vehicles v ORDER BY v.id DESC").all(),
     db.prepare("SELECT * FROM people ORDER BY id DESC").all(),
     db.prepare("SELECT r.*, (SELECT GROUP_CONCAT(rg.customer || ': ' || rg.goods, ' • ') FROM route_goods rg WHERE rg.route_id=r.id) cargo_summary FROM routes r ORDER BY r.id DESC").all(),
     db.prepare("SELECT s.*, r.code route_code, r.origin, r.destination, v.plate, p.name driver_name, a.name assistant_name FROM schedules s JOIN routes r ON r.id=s.route_id JOIN vehicles v ON v.id=s.vehicle_id JOIN people p ON p.id=s.driver_id LEFT JOIN people a ON a.id=s.assistant_id ORDER BY s.date,s.time").all(),
+    db.prepare("SELECT m.*, v.plate, v.type vehicle_type FROM mileage_fuel_logs m JOIN vehicles v ON v.id=m.vehicle_id ORDER BY m.recorded_at DESC, m.id DESC").all(),
   ]);
-  return Response.json({vehicles:vehicles.results, people:people.results, routes:routes.results, schedules:schedules.results});
+  return Response.json({vehicles:vehicles.results, people:people.results, routes:routes.results, schedules:schedules.results, mileageFuelLogs:mileageFuelLogs.results});
 }
 
 export async function POST(request: Request) {
@@ -70,6 +73,13 @@ export async function POST(request: Request) {
     await db.batch(items.map((item) => db.prepare("INSERT INTO route_goods (route_id,goods,customer) VALUES (?,?,?)").bind(routeId,item.goods.trim(),item.customer.trim())));
   }
   else if (p.kind === "schedule") await db.prepare("INSERT INTO schedules (route_id,vehicle_id,driver_id,assistant_id,date,time,status) VALUES (?,?,?,?,?,?,'Scheduled')").bind(p.routeId,p.vehicleId,p.driverId,p.assistantId || null,p.date,p.time).run();
+  else if (p.kind === "fuelLog") {
+    const vehicleId = Number(p.vehicleId), odometerKm = Number(p.odometerKm), petrolLitres = Number(p.petrolLitres), petrolCost = Number(p.petrolCost);
+    if (!vehicleId || !p.recordedAt || odometerKm < 0 || petrolLitres <= 0 || petrolCost < 0) return Response.json({error:"Valid vehicle, date, mileage, petrol quantity and cost are required"},{status:400});
+    const latest = await db.prepare("SELECT odometer_km FROM mileage_fuel_logs WHERE vehicle_id=? ORDER BY recorded_at DESC, id DESC LIMIT 1").bind(vehicleId).first<{odometer_km:number}>();
+    if (latest && odometerKm < latest.odometer_km) return Response.json({error:`Odometer cannot be lower than the latest reading of ${latest.odometer_km} km`},{status:400});
+    await db.prepare("INSERT INTO mileage_fuel_logs (vehicle_id,recorded_at,odometer_km,petrol_litres,petrol_cost,station,notes) VALUES (?,?,?,?,?,?,?)").bind(vehicleId,p.recordedAt,odometerKm,petrolLitres,petrolCost,p.station || null,p.notes || null).run();
+  }
   else return Response.json({error:"Invalid record type"},{status:400});
   return Response.json({ok:true},{status:201});
 }

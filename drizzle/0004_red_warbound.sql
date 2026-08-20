@@ -1,0 +1,1 @@
+CREATE INDEX `idx_mileage_fuel_logs_vehicle_date` ON `mileage_fuel_logs` (`vehicle_id`,`recorded_at`);

@@ -1,4 +1,4 @@
-import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { index, integer, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
 
 export const vehicles = sqliteTable("vehicles", {
   id: integer("id").primaryKey({ autoIncrement: true }),
@@ -36,6 +36,17 @@ export const routeGoods = sqliteTable("route_goods", {
   goods: text("goods").notNull(),
   customer: text("customer").notNull(),
 });
+
+export const mileageFuelLogs = sqliteTable("mileage_fuel_logs", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  vehicleId: integer("vehicle_id").notNull(),
+  recordedAt: text("recorded_at").notNull(),
+  odometerKm: integer("odometer_km").notNull(),
+  petrolLitres: real("petrol_litres").notNull(),
+  petrolCost: real("petrol_cost").notNull(),
+  station: text("station"),
+  notes: text("notes"),
+}, (table) => [index("idx_mileage_fuel_logs_vehicle_date").on(table.vehicleId, table.recordedAt)]);
 
 export const schedules = sqliteTable("schedules", {
   id: integer("id").primaryKey({ autoIncrement: true }),
