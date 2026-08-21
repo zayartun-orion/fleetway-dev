@@ -17,6 +17,7 @@ export const people = sqliteTable("people", {
   drivingLicense: text("driving_license"),
   licenseExpiry: text("license_expiry"),
   address: text("address"),
+  driverPinHash: text("driver_pin_hash"),
   status: text("status").notNull().default("Available"),
 });
 
@@ -60,6 +61,51 @@ export const maintenanceLogs = sqliteTable("maintenance_logs", {
   cost: real("cost").notNull().default(0),
   notes: text("notes"),
 }, (table) => [index("idx_maintenance_logs_vehicle_due").on(table.vehicleId, table.nextDueDate)]);
+
+export const driverSessions = sqliteTable("driver_sessions", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  driverId: integer("driver_id").notNull(),
+  tokenHash: text("token_hash").notNull().unique(),
+  expiresAt: text("expires_at").notNull(),
+});
+
+export const attendanceLogs = sqliteTable("attendance_logs", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  driverId: integer("driver_id").notNull(),
+  workDate: text("work_date").notNull(),
+  checkInAt: text("check_in_at").notNull(),
+  checkInLatitude: real("check_in_latitude"),
+  checkInLongitude: real("check_in_longitude"),
+  checkOutAt: text("check_out_at"),
+  checkOutLatitude: real("check_out_latitude"),
+  checkOutLongitude: real("check_out_longitude"),
+}, (table) => [index("idx_attendance_driver_date").on(table.driverId, table.workDate)]);
+
+export const driverTripLogs = sqliteTable("driver_trip_logs", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  scheduleId: integer("schedule_id").notNull().unique(),
+  driverId: integer("driver_id").notNull(),
+  loadingStartedAt: text("loading_started_at"),
+  departedAt: text("departed_at"),
+  unloadingStartedAt: text("unloading_started_at"),
+  completedAt: text("completed_at"),
+  startOdometerKm: integer("start_odometer_km"),
+  endOdometerKm: integer("end_odometer_km"),
+  fuelLitres: real("fuel_litres"),
+  fuelCost: real("fuel_cost"),
+  lastLatitude: real("last_latitude"),
+  lastLongitude: real("last_longitude"),
+  lastLocationAt: text("last_location_at"),
+  notes: text("notes"),
+});
+
+export const driverLocationUpdates = sqliteTable("driver_location_updates", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  tripLogId: integer("trip_log_id").notNull(),
+  recordedAt: text("recorded_at").notNull(),
+  latitude: real("latitude").notNull(),
+  longitude: real("longitude").notNull(),
+}, (table) => [index("idx_driver_locations_trip_time").on(table.tripLogId, table.recordedAt)]);
 
 export const schedules = sqliteTable("schedules", {
   id: integer("id").primaryKey({ autoIncrement: true }),

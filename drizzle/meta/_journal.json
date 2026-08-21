@@ -43,6 +43,13 @@
       "when": 1787207296808,
       "tag": "0005_careful_crystal",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1787296353319,
+      "tag": "0006_living_warpath",
+      "breakpoints": true
     }
   ]
 }
