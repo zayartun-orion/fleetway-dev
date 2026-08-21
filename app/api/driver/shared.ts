@@ -18,6 +18,8 @@ export async function ensureDriverTables(){
     db.prepare("CREATE TABLE IF NOT EXISTS driver_trip_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, schedule_id INTEGER NOT NULL UNIQUE, driver_id INTEGER NOT NULL, loading_started_at TEXT, departed_at TEXT, unloading_started_at TEXT, completed_at TEXT, start_odometer_km INTEGER, end_odometer_km INTEGER, fuel_litres REAL, fuel_cost REAL, last_latitude REAL, last_longitude REAL, last_location_at TEXT, notes TEXT)"),
     db.prepare("CREATE TABLE IF NOT EXISTS driver_location_updates (id INTEGER PRIMARY KEY AUTOINCREMENT, trip_log_id INTEGER NOT NULL, recorded_at TEXT NOT NULL, latitude REAL NOT NULL, longitude REAL NOT NULL)"),
     db.prepare("CREATE INDEX IF NOT EXISTS idx_driver_locations_trip_time ON driver_location_updates(trip_log_id,recorded_at)"),
+    db.prepare("CREATE TABLE IF NOT EXISTS driver_trip_photos (id INTEGER PRIMARY KEY AUTOINCREMENT, trip_log_id INTEGER NOT NULL, photo_type TEXT NOT NULL, object_key TEXT NOT NULL UNIQUE, file_name TEXT NOT NULL, content_type TEXT NOT NULL, uploaded_at TEXT NOT NULL)"),
+    db.prepare("CREATE INDEX IF NOT EXISTS idx_driver_trip_photos_trip ON driver_trip_photos(trip_log_id)"),
   ]);
   const columns=await db.prepare("PRAGMA table_info(people)").all<{name:string}>();
   if(!columns.results.some(c=>c.name==="driver_pin_hash")) await db.prepare("ALTER TABLE people ADD COLUMN driver_pin_hash TEXT").run();

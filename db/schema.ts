@@ -107,6 +107,16 @@ export const driverLocationUpdates = sqliteTable("driver_location_updates", {
   longitude: real("longitude").notNull(),
 }, (table) => [index("idx_driver_locations_trip_time").on(table.tripLogId, table.recordedAt)]);
 
+export const driverTripPhotos = sqliteTable("driver_trip_photos", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  tripLogId: integer("trip_log_id").notNull(),
+  photoType: text("photo_type").notNull(),
+  objectKey: text("object_key").notNull().unique(),
+  fileName: text("file_name").notNull(),
+  contentType: text("content_type").notNull(),
+  uploadedAt: text("uploaded_at").notNull(),
+}, (table) => [index("idx_driver_trip_photos_trip").on(table.tripLogId)]);
+
 export const schedules = sqliteTable("schedules", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   routeId: integer("route_id").notNull(),
