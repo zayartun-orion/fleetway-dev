@@ -62,6 +62,18 @@ export const maintenanceLogs = sqliteTable("maintenance_logs", {
   notes: text("notes"),
 }, (table) => [index("idx_maintenance_logs_vehicle_due").on(table.vehicleId, table.nextDueDate)]);
 
+export const financialRecords = sqliteTable("financial_records", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  scheduleId: integer("schedule_id"),
+  recordDate: text("record_date").notNull(),
+  revenue: real("revenue").notNull().default(0),
+  amountReceived: real("amount_received").notNull().default(0),
+  driverExpense: real("driver_expense").notNull().default(0),
+  assistantExpense: real("assistant_expense").notNull().default(0),
+  otherExpense: real("other_expense").notNull().default(0),
+  notes: text("notes"),
+}, (table) => [index("idx_financial_records_date_schedule").on(table.recordDate, table.scheduleId)]);
+
 export const driverSessions = sqliteTable("driver_sessions", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   driverId: integer("driver_id").notNull(),
