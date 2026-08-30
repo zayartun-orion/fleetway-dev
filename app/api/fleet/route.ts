@@ -16,6 +16,9 @@ async function ready() {
     db.prepare("CREATE TABLE IF NOT EXISTS driver_trip_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, schedule_id INTEGER NOT NULL UNIQUE, driver_id INTEGER NOT NULL, loading_started_at TEXT, departed_at TEXT, unloading_started_at TEXT, completed_at TEXT, start_odometer_km INTEGER, end_odometer_km INTEGER, fuel_litres REAL, fuel_cost REAL, last_latitude REAL, last_longitude REAL, last_location_at TEXT, notes TEXT)"),
     db.prepare("CREATE TABLE IF NOT EXISTS attendance_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, driver_id INTEGER NOT NULL, work_date TEXT NOT NULL, check_in_at TEXT NOT NULL, check_in_latitude REAL, check_in_longitude REAL, check_out_at TEXT, check_out_latitude REAL, check_out_longitude REAL)"),
     db.prepare("CREATE TABLE IF NOT EXISTS driver_trip_photos (id INTEGER PRIMARY KEY AUTOINCREMENT, trip_log_id INTEGER NOT NULL, photo_type TEXT NOT NULL, object_key TEXT NOT NULL UNIQUE, file_name TEXT NOT NULL, content_type TEXT NOT NULL, uploaded_at TEXT NOT NULL)"),
+    db.prepare("CREATE TABLE IF NOT EXISTS driver_checkpoints (id INTEGER PRIMARY KEY AUTOINCREMENT, trip_log_id INTEGER NOT NULL, driver_id INTEGER NOT NULL, checkpoint_type TEXT NOT NULL, recorded_at TEXT NOT NULL, latitude REAL NOT NULL, longitude REAL NOT NULL)"),
+    db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS idx_driver_checkpoints_trip_type ON driver_checkpoints(trip_log_id,checkpoint_type)"),
+    db.prepare("CREATE INDEX IF NOT EXISTS idx_driver_checkpoints_driver_time ON driver_checkpoints(driver_id,recorded_at)"),
     db.prepare("CREATE TABLE IF NOT EXISTS schedules (id INTEGER PRIMARY KEY AUTOINCREMENT, route_id INTEGER NOT NULL, vehicle_id INTEGER NOT NULL, driver_id INTEGER NOT NULL, assistant_id INTEGER, date TEXT NOT NULL, time TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'Scheduled')"),
   ]);
   const peopleColumns = await db.prepare("PRAGMA table_info(people)").all<{name:string}>();
@@ -49,7 +52,7 @@ async function ready() {
 
 export async function GET() {
   const db = await ready();
-  const [vehicles, people, routes, schedules, mileageFuelLogs, maintenanceLogs, driverActivity, driverAttendance, financialRecords] = await Promise.all([
+  const [vehicles, people, routes, schedules, mileageFuelLogs, maintenanceLogs, driverActivity, driverAttendance, financialRecords, driverCheckpoints] = await Promise.all([
     db.prepare("SELECT v.*, (SELECT m.odometer_km FROM mileage_fuel_logs m WHERE m.vehicle_id=v.id ORDER BY m.recorded_at DESC, m.id DESC LIMIT 1) latest_odometer_km, (SELECT ROUND(SUM(m.petrol_litres),2) FROM mileage_fuel_logs m WHERE m.vehicle_id=v.id) total_petrol_litres FROM vehicles v ORDER BY v.id DESC").all(),
     db.prepare("SELECT * FROM people ORDER BY id DESC").all(),
     db.prepare("SELECT r.*, (SELECT GROUP_CONCAT(rg.customer || ': ' || rg.goods, ' • ') FROM route_goods rg WHERE rg.route_id=r.id) cargo_summary FROM routes r ORDER BY r.id DESC").all(),
@@ -59,8 +62,9 @@ export async function GET() {
     db.prepare("SELECT t.*,s.date schedule_date,s.vehicle_id,p.name driver_name,r.code route_code,r.origin,r.destination,r.distance route_distance,v.plate,(SELECT COUNT(*) FROM driver_trip_photos ph WHERE ph.trip_log_id=t.id) photo_count,(SELECT ph.object_key FROM driver_trip_photos ph WHERE ph.trip_log_id=t.id AND ph.photo_type='mileage' ORDER BY ph.id DESC LIMIT 1) mileage_photo_key,(SELECT ph.object_key FROM driver_trip_photos ph WHERE ph.trip_log_id=t.id AND ph.photo_type='fuel' ORDER BY ph.id DESC LIMIT 1) fuel_photo_key FROM driver_trip_logs t JOIN people p ON p.id=t.driver_id JOIN schedules s ON s.id=t.schedule_id JOIN routes r ON r.id=s.route_id JOIN vehicles v ON v.id=s.vehicle_id ORDER BY COALESCE(t.completed_at,t.loading_started_at) DESC").all(),
     db.prepare("SELECT a.*,p.name driver_name FROM attendance_logs a JOIN people p ON p.id=a.driver_id ORDER BY a.work_date DESC,a.check_in_at DESC LIMIT 50").all(),
     db.prepare("SELECT f.*,s.date trip_date,r.code route_code,v.plate,p.name driver_name,a.name assistant_name FROM financial_records f LEFT JOIN schedules s ON s.id=f.schedule_id LEFT JOIN routes r ON r.id=s.route_id LEFT JOIN vehicles v ON v.id=s.vehicle_id LEFT JOIN people p ON p.id=s.driver_id LEFT JOIN people a ON a.id=s.assistant_id ORDER BY f.record_date DESC,f.id DESC").all(),
+    db.prepare("SELECT c.*,t.schedule_id,p.name driver_name,r.code route_code,v.plate FROM driver_checkpoints c JOIN driver_trip_logs t ON t.id=c.trip_log_id JOIN people p ON p.id=c.driver_id JOIN schedules s ON s.id=t.schedule_id JOIN routes r ON r.id=s.route_id JOIN vehicles v ON v.id=s.vehicle_id ORDER BY c.recorded_at DESC").all(),
   ]);
-  return Response.json({vehicles:vehicles.results, people:people.results, routes:routes.results, schedules:schedules.results, mileageFuelLogs:mileageFuelLogs.results, maintenanceLogs:maintenanceLogs.results, driverActivity:driverActivity.results, driverAttendance:driverAttendance.results, financialRecords:financialRecords.results});
+  return Response.json({vehicles:vehicles.results, people:people.results, routes:routes.results, schedules:schedules.results, mileageFuelLogs:mileageFuelLogs.results, maintenanceLogs:maintenanceLogs.results, driverActivity:driverActivity.results, driverAttendance:driverAttendance.results, financialRecords:financialRecords.results, driverCheckpoints:driverCheckpoints.results});
 }
 
 export async function POST(request: Request) {
