@@ -1,4 +1,4 @@
-import { index, integer, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { index, integer, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
 
 export const vehicles = sqliteTable("vehicles", {
   id: integer("id").primaryKey({ autoIncrement: true }),
@@ -128,7 +128,7 @@ export const driverCheckpoints = sqliteTable("driver_checkpoints", {
   latitude: real("latitude").notNull(),
   longitude: real("longitude").notNull(),
 }, (table) => [
-  uniqueIndex("idx_driver_checkpoints_trip_type").on(table.tripLogId, table.checkpointType),
+  index("idx_driver_checkpoints_trip_type_time").on(table.tripLogId, table.checkpointType, table.recordedAt),
   index("idx_driver_checkpoints_driver_time").on(table.driverId, table.recordedAt),
 ]);
 

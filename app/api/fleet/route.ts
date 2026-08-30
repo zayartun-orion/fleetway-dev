@@ -17,7 +17,7 @@ async function ready() {
     db.prepare("CREATE TABLE IF NOT EXISTS attendance_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, driver_id INTEGER NOT NULL, work_date TEXT NOT NULL, check_in_at TEXT NOT NULL, check_in_latitude REAL, check_in_longitude REAL, check_out_at TEXT, check_out_latitude REAL, check_out_longitude REAL)"),
     db.prepare("CREATE TABLE IF NOT EXISTS driver_trip_photos (id INTEGER PRIMARY KEY AUTOINCREMENT, trip_log_id INTEGER NOT NULL, photo_type TEXT NOT NULL, object_key TEXT NOT NULL UNIQUE, file_name TEXT NOT NULL, content_type TEXT NOT NULL, uploaded_at TEXT NOT NULL)"),
     db.prepare("CREATE TABLE IF NOT EXISTS driver_checkpoints (id INTEGER PRIMARY KEY AUTOINCREMENT, trip_log_id INTEGER NOT NULL, driver_id INTEGER NOT NULL, checkpoint_type TEXT NOT NULL, recorded_at TEXT NOT NULL, latitude REAL NOT NULL, longitude REAL NOT NULL)"),
-    db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS idx_driver_checkpoints_trip_type ON driver_checkpoints(trip_log_id,checkpoint_type)"),
+    db.prepare("CREATE INDEX IF NOT EXISTS idx_driver_checkpoints_trip_type_time ON driver_checkpoints(trip_log_id,checkpoint_type,recorded_at)"),
     db.prepare("CREATE INDEX IF NOT EXISTS idx_driver_checkpoints_driver_time ON driver_checkpoints(driver_id,recorded_at)"),
     db.prepare("CREATE TABLE IF NOT EXISTS schedules (id INTEGER PRIMARY KEY AUTOINCREMENT, route_id INTEGER NOT NULL, vehicle_id INTEGER NOT NULL, driver_id INTEGER NOT NULL, assistant_id INTEGER, date TEXT NOT NULL, time TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'Scheduled')"),
   ]);
