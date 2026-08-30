@@ -152,3 +152,22 @@ export const schedules = sqliteTable("schedules", {
   time: text("time").notNull(),
   status: text("status").notNull().default("Scheduled"),
 });
+
+export const profitSettings = sqliteTable("profit_settings", {
+  key: text("key").primaryKey(),
+  value: real("value").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
+export const routeProfitInputs = sqliteTable("route_profit_inputs", {
+  routeId: integer("route_id").primaryKey(),
+  chargingBasis: text("charging_basis").notNull().default("Per trip"),
+  rate: real("rate").notNull().default(0),
+  loadQty: real("load_qty").notNull().default(1),
+  unit: text("unit").notNull().default("trip"),
+  tripsPerWeek: real("trips_per_week").notNull().default(0),
+  otherTripCost: real("other_trip_cost").notNull().default(0),
+  routeIncentive: real("route_incentive").notNull().default(0),
+  mealType: text("meal_type").notNull().default("Yangon"),
+  updatedAt: text("updated_at").notNull(),
+});

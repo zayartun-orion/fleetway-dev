@@ -20,6 +20,8 @@ async function ready() {
     db.prepare("CREATE INDEX IF NOT EXISTS idx_driver_checkpoints_trip_type_time ON driver_checkpoints(trip_log_id,checkpoint_type,recorded_at)"),
     db.prepare("CREATE INDEX IF NOT EXISTS idx_driver_checkpoints_driver_time ON driver_checkpoints(driver_id,recorded_at)"),
     db.prepare("CREATE TABLE IF NOT EXISTS schedules (id INTEGER PRIMARY KEY AUTOINCREMENT, route_id INTEGER NOT NULL, vehicle_id INTEGER NOT NULL, driver_id INTEGER NOT NULL, assistant_id INTEGER, date TEXT NOT NULL, time TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'Scheduled')"),
+    db.prepare("CREATE TABLE IF NOT EXISTS profit_settings (key TEXT PRIMARY KEY, value REAL NOT NULL, updated_at TEXT NOT NULL)"),
+    db.prepare("CREATE TABLE IF NOT EXISTS route_profit_inputs (route_id INTEGER PRIMARY KEY, charging_basis TEXT NOT NULL DEFAULT 'Per trip', rate REAL NOT NULL DEFAULT 0, load_qty REAL NOT NULL DEFAULT 1, unit TEXT NOT NULL DEFAULT 'trip', trips_per_week REAL NOT NULL DEFAULT 0, other_trip_cost REAL NOT NULL DEFAULT 0, route_incentive REAL NOT NULL DEFAULT 0, meal_type TEXT NOT NULL DEFAULT 'Yangon', updated_at TEXT NOT NULL)"),
   ]);
   const peopleColumns = await db.prepare("PRAGMA table_info(people)").all<{name:string}>();
   const existingColumns = new Set(peopleColumns.results.map((column) => column.name));
@@ -52,7 +54,7 @@ async function ready() {
 
 export async function GET() {
   const db = await ready();
-  const [vehicles, people, routes, schedules, mileageFuelLogs, maintenanceLogs, driverActivity, driverAttendance, financialRecords, driverCheckpoints] = await Promise.all([
+  const [vehicles, people, routes, schedules, mileageFuelLogs, maintenanceLogs, driverActivity, driverAttendance, financialRecords, driverCheckpoints, profitSettings, routeProfitInputs] = await Promise.all([
     db.prepare("SELECT v.*, (SELECT m.odometer_km FROM mileage_fuel_logs m WHERE m.vehicle_id=v.id ORDER BY m.recorded_at DESC, m.id DESC LIMIT 1) latest_odometer_km, (SELECT ROUND(SUM(m.petrol_litres),2) FROM mileage_fuel_logs m WHERE m.vehicle_id=v.id) total_petrol_litres FROM vehicles v ORDER BY v.id DESC").all(),
     db.prepare("SELECT * FROM people ORDER BY id DESC").all(),
     db.prepare("SELECT r.*, (SELECT GROUP_CONCAT(rg.customer || ': ' || rg.goods, ' • ') FROM route_goods rg WHERE rg.route_id=r.id) cargo_summary FROM routes r ORDER BY r.id DESC").all(),
@@ -63,13 +65,15 @@ export async function GET() {
     db.prepare("SELECT a.*,p.name driver_name FROM attendance_logs a JOIN people p ON p.id=a.driver_id ORDER BY a.work_date DESC,a.check_in_at DESC LIMIT 50").all(),
     db.prepare("SELECT f.*,s.date trip_date,r.code route_code,v.plate,p.name driver_name,a.name assistant_name FROM financial_records f LEFT JOIN schedules s ON s.id=f.schedule_id LEFT JOIN routes r ON r.id=s.route_id LEFT JOIN vehicles v ON v.id=s.vehicle_id LEFT JOIN people p ON p.id=s.driver_id LEFT JOIN people a ON a.id=s.assistant_id ORDER BY f.record_date DESC,f.id DESC").all(),
     db.prepare("SELECT c.*,t.schedule_id,p.name driver_name,r.code route_code,v.plate FROM driver_checkpoints c JOIN driver_trip_logs t ON t.id=c.trip_log_id JOIN people p ON p.id=c.driver_id JOIN schedules s ON s.id=t.schedule_id JOIN routes r ON r.id=s.route_id JOIN vehicles v ON v.id=s.vehicle_id ORDER BY c.recorded_at DESC").all(),
+    db.prepare("SELECT key,value,updated_at FROM profit_settings ORDER BY key").all(),
+    db.prepare("SELECT * FROM route_profit_inputs ORDER BY route_id").all(),
   ]);
-  return Response.json({vehicles:vehicles.results, people:people.results, routes:routes.results, schedules:schedules.results, mileageFuelLogs:mileageFuelLogs.results, maintenanceLogs:maintenanceLogs.results, driverActivity:driverActivity.results, driverAttendance:driverAttendance.results, financialRecords:financialRecords.results, driverCheckpoints:driverCheckpoints.results});
+  return Response.json({vehicles:vehicles.results, people:people.results, routes:routes.results, schedules:schedules.results, mileageFuelLogs:mileageFuelLogs.results, maintenanceLogs:maintenanceLogs.results, driverActivity:driverActivity.results, driverAttendance:driverAttendance.results, financialRecords:financialRecords.results, driverCheckpoints:driverCheckpoints.results, profitSettings:profitSettings.results, routeProfitInputs:routeProfitInputs.results});
 }
 
 export async function POST(request: Request) {
   const db = await ready();
-  const p = await request.json() as Record<string, string | number | null | Array<{goods:string;customer:string}>>;
+  const p = await request.json() as Record<string, string | number | null | Array<{goods:string;customer:string}> | Array<Record<string,string|number>>>;
   if (p.kind === "vehicle") await db.prepare("INSERT INTO vehicles (plate,type,capacity,status) VALUES (?,?,?,'Available')").bind(p.plate,p.type,p.capacity).run();
   else if (p.kind === "person") {
     if (p.role === "Driver" && (!p.licenseClass || !p.drivingLicense || !p.licenseExpiry || !p.address)) {
@@ -107,6 +111,15 @@ export async function POST(request: Request) {
     if (!p.recordDate || [revenue,received,driver,assistant,other].some(value=>value<0)) return Response.json({error:"A date and non-negative financial amounts are required"},{status:400});
     if (received>revenue) return Response.json({error:"Amount received cannot exceed revenue"},{status:400});
     await db.prepare("INSERT INTO financial_records (schedule_id,record_date,revenue,amount_received,driver_expense,assistant_expense,other_expense,notes) VALUES (?,?,?,?,?,?,?,?)").bind(scheduleId,p.recordDate,revenue,received,driver,assistant,other,p.notes||null).run();
+  }
+  else if (p.kind === "profitModel") {
+    const settings=Array.isArray(p.settings)?p.settings:[],routeInputs=Array.isArray(p.routeInputs)?p.routeInputs:[],now=new Date().toISOString();
+    const validKeys=new Set(["dieselPrice","fuelEfficiency","returnMultiplier","maintenancePerKm","mealYangon","mealOutside","crewPaid","salariedCrew","baseSalary","baseSalaryThreshold","weeksPerMonth","fixedOverhead"]);
+    if (!settings.length || settings.some(row=>!validKeys.has(String(row.key))||Number(row.value)<0) || routeInputs.some(row=>Number(row.routeId)<=0||Number(row.rate)<0||Number(row.loadQty)<0||Number(row.tripsPerWeek)<0||Number(row.otherTripCost)<0||Number(row.routeIncentive)<0)) return Response.json({error:"Profit assumptions and route inputs must contain valid non-negative values"},{status:400});
+    await db.batch([
+      ...settings.map(row=>db.prepare("INSERT INTO profit_settings (key,value,updated_at) VALUES (?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at").bind(String(row.key),Number(row.value),now)),
+      ...routeInputs.map(row=>db.prepare("INSERT INTO route_profit_inputs (route_id,charging_basis,rate,load_qty,unit,trips_per_week,other_trip_cost,route_incentive,meal_type,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT(route_id) DO UPDATE SET charging_basis=excluded.charging_basis,rate=excluded.rate,load_qty=excluded.load_qty,unit=excluded.unit,trips_per_week=excluded.trips_per_week,other_trip_cost=excluded.other_trip_cost,route_incentive=excluded.route_incentive,meal_type=excluded.meal_type,updated_at=excluded.updated_at").bind(Number(row.routeId),String(row.chargingBasis||"Per trip"),Number(row.rate),Number(row.loadQty),String(row.unit||"trip"),Number(row.tripsPerWeek),Number(row.otherTripCost),Number(row.routeIncentive),String(row.mealType||"Yangon"),now)),
+    ]);
   }
   else return Response.json({error:"Invalid record type"},{status:400});
   return Response.json({ok:true},{status:201});
