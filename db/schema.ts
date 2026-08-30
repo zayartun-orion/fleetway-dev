@@ -171,3 +171,12 @@ export const routeProfitInputs = sqliteTable("route_profit_inputs", {
   mealType: text("meal_type").notNull().default("Yangon"),
   updatedAt: text("updated_at").notNull(),
 });
+
+export const customProfitAssumptions = sqliteTable("custom_profit_assumptions", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  name: text("name").notNull(),
+  value: real("value").notNull().default(0),
+  unit: text("unit").notNull().default("MMK"),
+  costType: text("cost_type").notNull().default("monthly"),
+  updatedAt: text("updated_at").notNull(),
+});
